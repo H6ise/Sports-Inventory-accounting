@@ -75,13 +75,17 @@ class ReportTableModel(QAbstractTableModel):
         self.data = self.load_reports()
 
     def load_reports(self):
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT id, config, type, created_at FROM report_templates WHERE user_id = ? ORDER BY created_at DESC", (self.user_id,))
-        reports = []
-        for row in cursor.fetchall():
-            config = json.loads(row[1])
-            reports.append((row[0], config.get('name', 'Без названия'), row[3], row[2]))
-        return reports
+        try:
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT id, config, type, created_at FROM report_templates WHERE user_id = ? ORDER BY created_at DESC", (self.user_id,))
+            reports = []
+            for row in cursor.fetchall():
+                config = json.loads(row[1])
+                reports.append((row[0], config.get('name', 'Без названия'), row[3], row[2]))
+            return reports
+        except Exception as e:
+            logging.error(f"Ошибка загрузки отчётов: {e}")
+            return []
 
     def rowCount(self, parent=None):
         return len(self.data)
@@ -112,9 +116,13 @@ class UserTableModel(QAbstractTableModel):
         self.data = self.load_users()
 
     def load_users(self):
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT id, username, role FROM users")
-        return cursor.fetchall()
+        try:
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT id, username, role FROM users")
+            return cursor.fetchall()
+        except Exception as e:
+            logging.error(f"Ошибка загрузки пользователей: {e}")
+            return []
 
     def rowCount(self, parent=None):
         return len(self.data)
@@ -147,142 +155,166 @@ class ReportGenerator:
         self.data, self.headers = self.fetch_data()
 
     def fetch_data(self):
-        cursor = self.db.conn.cursor()
-        fields = self.config.get('fields', ['id', 'name', 'category', 'quantity', 'condition'])
-        query = f"SELECT {', '.join(fields)} FROM inventory WHERE 1=1"
-        params = []
-        filters = self.config.get('filters', {})
-        if filters.get('category'):
-            query += " AND category = ?"
-            params.append(filters['category'])
-        if filters.get('condition'):
-            query += " AND condition = ?"
-            params.append(filters['condition'])
-        if filters.get('date_from'):
-            query += " AND purchase_date >= ?"
-            params.append(filters['date_from'])
-        if filters.get('date_to'):
-            query += " AND purchase_date <= ?"
-            params.append(filters['date_to'])
-        cursor.execute(query, params)
-        return cursor.fetchall(), fields
+        try:
+            cursor = self.db.conn.cursor()
+            fields = self.config.get('fields', ['id', 'name', 'category', 'quantity', 'condition'])
+            query = f"SELECT {', '.join(fields)} FROM inventory WHERE 1=1"
+            params = []
+            filters = self.config.get('filters', {})
+            if filters.get('category'):
+                query += " AND category = ?"
+                params.append(filters['category'])
+            if filters.get('condition'):
+                query += " AND condition = ?"
+                params.append(filters['condition'])
+            if filters.get('date_from'):
+                query += " AND purchase_date >= ?"
+                params.append(filters['date_from'])
+            if filters.get('date_to'):
+                query += " AND purchase_date <= ?"
+                params.append(filters['date_to'])
+            cursor.execute(query, params)
+            return cursor.fetchall(), fields
+        except Exception as e:
+            logging.error(f"Ошибка выборки данных: {e}")
+            return [], []
 
     def add_visualization(self, viz_type='table'):
         if viz_type == 'table':
             return None
-        fig, ax = plt.subplots()
-        data = list(self.data)
-        headers = self.headers
-        if viz_type == 'bar':
-            ax.bar([row[0] for row in data], [row[3] if len(row) > 3 else 0 for row in data])
-            ax.set_xlabel(headers[0])
-            ax.set_ylabel(headers[3] if len(headers) > 3 else 'Количество')
-        elif viz_type == 'pie':
-            ax.pie([row[3] if len(row) > 3 else 0 for row in data], labels=[row[1] for row in data], autopct='%1.1f%%')
-        elif viz_type == 'line':
-            ax.plot([row[0] for row in data], [row[3] if len(row) > 3 else 0 for row in data])
-            ax.set_xlabel(headers[0])
-            ax.set_ylabel(headers[3] if len(headers) > 3 else 'Количество')
-        buf = BytesIO()
-        fig.savefig(buf, format='png')
-        buf.seek(0)
-        plt.close(fig)
-        return buf
+        try:
+            fig, ax = plt.subplots()
+            data = list(self.data)
+            headers = self.headers
+            if viz_type == 'bar':
+                ax.bar([row[0] for row in data], [row[3] if len(row) > 3 else 0 for row in data])
+                ax.set_xlabel(headers[0])
+                ax.set_ylabel(headers[3] if len(headers) > 3 else 'Количество')
+            elif viz_type == 'pie':
+                ax.pie([row[3] if len(row) > 3 else 0 for row in data], labels=[row[1] for row in data], autopct='%1.1f%%')
+            elif viz_type == 'line':
+                ax.plot([row[0] for row in data], [row[3] if len(row) > 3 else 0 for row in data])
+                ax.set_xlabel(headers[0])
+                ax.set_ylabel(headers[3] if len(headers) > 3 else 'Количество')
+            buf = BytesIO()
+            fig.savefig(buf, format='png')
+            buf.seek(0)
+            plt.close(fig)
+            return buf
+        except Exception as e:
+            logging.error(f"Ошибка создания визуализации: {e}")
+            return None
 
     def export(self, filename):
-        if self.format == 'pdf':
-            self.generate_pdf(filename)
-        elif self.format == 'excel':
-            self.generate_excel(filename)
-        elif self.format == 'html':
-            self.generate_html(filename)
+        try:
+            if self.format == 'pdf':
+                self.generate_pdf(filename)
+            elif self.format == 'excel':
+                self.generate_excel(filename)
+            elif self.format == 'html':
+                self.generate_html(filename)
+        except Exception as e:
+            logging.error(f"Ошибка экспорта отчёта: {e}")
+            QMessageBox.warning(None, 'Ошибка', 'Не удалось экспортировать отчёт')
 
     def generate_pdf(self, filename):
-        doc = SimpleDocTemplate(filename, pagesize=letter)
-        elements = []
-        if self.logo_path:
-            logo = ReportImage(self.logo_path, width=100, height=50)
-            elements.append(logo)
-        table_data = [self.headers] + [list(row) for row in self.data]
-        table = Table(table_data)
-        table.setStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), self.config.get('font', 'Helvetica')),
-            ('FONTSIZE', (0, 0), (-1, 0), self.config.get('font_size', 12)),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black)
-        ])
-        elements.append(table)
-        if self.config.get('viz_type') != 'table':
-            img_buf = self.add_visualization(self.config.get('viz_type', 'bar'))
-            if img_buf:
-                img = ReportImage(img_buf, width=400, height=200)
-                elements.append(img)
-        doc.build(elements)
+        try:
+            doc = SimpleDocTemplate(filename, pagesize=letter)
+            elements = []
+            if self.logo_path:
+                logo = ReportImage(self.logo_path, width=100, height=50)
+                elements.append(logo)
+            table_data = [self.headers] + [list(row) for row in self.data]
+            table = Table(table_data)
+            table.setStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), self.config.get('font', 'Helvetica')),
+                ('FONTSIZE', (0, 0), (-1, 0), self.config.get('font_size', 12)),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+            ])
+            elements.append(table)
+            if self.config.get('viz_type') != 'table':
+                img_buf = self.add_visualization(self.config.get('viz_type', 'bar'))
+                if img_buf:
+                    img = ReportImage(img_buf, width=400, height=200)
+                    elements.append(img)
+            doc.build(elements)
+        except Exception as e:
+            logging.error(f"Ошибка генерации PDF: {e}")
+            raise
 
     def generate_excel(self, filename):
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.append(self.headers)
-        for row in self.data:
-            ws.append(list(row))
-        if self.config.get('viz_type') != 'table':
-            img_buf = self.add_visualization(self.config.get('viz_type', 'bar'))
-            if img_buf:
-                img = XLImage(img_buf)
-                ws.add_image(img, 'A10')
-        wb.save(filename)
+        try:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.append(self.headers)
+            for row in self.data:
+                ws.append(list(row))
+            if self.config.get('viz_type') != 'table':
+                img_buf = self.add_visualization(self.config.get('viz_type', 'bar'))
+                if img_buf:
+                    img = XLImage(img_buf)
+                    ws.add_image(img, 'A10')
+            wb.save(filename)
+        except Exception as e:
+            logging.error(f"Ошибка генерации Excel: {e}")
+            raise
 
     def generate_html(self, filename):
-        template_str = """
-        <html>
-        <head>
-            <style>
-                table { border-collapse: collapse; width: 100%; font-family: {{font}}; font-size: {{font_size}}px; }
-                th, td { border: 1px solid black; padding: 8px; text-align: center; }
-                th { background-color: {{header_color}}; color: white; }
-                body { background-color: {{bg_color}}; }
-            </style>
-        </head>
-        <body>
-            {% if logo %}
-            <img src="{{logo}}">
-            {% endif %}
-            <h1>{{title}}</h1>
-            <table>
-                <tr>{% for header in headers %}<th>{{header}}</th>{% endfor %}</tr>
-                {% for row in data %}
-                <tr>{% for col in row %}<td>{{col}}</td>{% endfor %}</tr>
-                {% endfor %}
-            </table>
-            {% if chart %}
-            <img src="data:image/png;base64,{{chart}}">
-            {% endif %}
-        </body>
-        </html>
-        """
-        template = Template(template_str)
-        data = list(self.data)
-        chart_base64 = ''
-        if self.config.get('viz_type') != 'table':
-            buf = self.add_visualization(self.config.get('viz_type', 'bar'))
-            if buf:
-                chart_base64 = base64.b64encode(buf.read()).decode()
-        with open(filename, 'w', encoding='utf-8') as f:
-            f.write(template.render(
-                logo=self.logo_path or '',
-                title=self.config.get('name', 'Отчёт'),
-                font=self.config.get('font', 'Helvetica'),
-                font_size=self.config.get('font_size', 12),
-                header_color=self.config.get('header_color', 'grey'),
-                bg_color=self.config.get('bg_color', '#f0f0f0'),
-                headers=self.headers,
-                data=data,
-                chart=chart_base64
-            ))
+        try:
+            template_str = """
+            <html>
+            <head>
+                <style>
+                    table { border-collapse: collapse; width: 100%; font-family: {{font}}; font-size: {{font_size}}px; }
+                    th, td { border: 1px solid black; padding: 8px; text-align: center; }
+                    th { background-color: {{header_color}}; color: white; }
+                    body { background-color: {{bg_color}}; }
+                </style>
+            </head>
+            <body>
+                {% if logo %}
+                <img src="{{logo}}">
+                {% endif %}
+                <h1>{{title}}</h1>
+                <table>
+                    <tr>{% for header in headers %}<th>{{header}}</th>{% endfor %}</tr>
+                    {% for row in data %}
+                    <tr>{% for col in row %}<td>{{col}}</td>{% endfor %}</tr>
+                    {% endfor %}
+                </table>
+                {% if chart %}
+                <img src="data:image/png;base64,{{chart}}">
+                {% endif %}
+            </body>
+            </html>
+            """
+            template = Template(template_str)
+            data = list(self.data)
+            chart_base64 = ''
+            if self.config.get('viz_type') != 'table':
+                buf = self.add_visualization(self.config.get('viz_type', 'bar'))
+                if buf:
+                    chart_base64 = base64.b64encode(buf.read()).decode()
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(template.render(
+                    logo=self.logo_path or '',
+                    title=self.config.get('name', 'Отчёт'),
+                    font=self.config.get('font', 'Helvetica'),
+                    font_size=self.config.get('font_size', 12),
+                    header_color=self.config.get('header_color', 'grey'),
+                    bg_color=self.config.get('bg_color', '#f0f0f0'),
+                    headers=self.headers,
+                    data=data,
+                    chart=chart_base64
+                ))
+        except Exception as e:
+            logging.error(f"Ошибка генерации HTML: {e}")
+            raise
 
 class ReportEditor(QDialog):
     """Редактор отчётов с поддержкой Undo/Redo и редактируемым предпросмотром"""
@@ -336,9 +368,13 @@ class ReportEditor(QDialog):
             'preview_html': '<h1>Предпросмотр отчёта</h1>'
         }
         self.undo_stack = QUndoStack(self)
-        self.setup_ui()
-        self.preview.setHtml(self.config['preview_html'])
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        try:
+            self.setup_ui()
+            self.preview.setHtml(self.config['preview_html'])
+            self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        except Exception as e:
+            logging.error(f"Ошибка инициализации редактора отчётов: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось открыть редактор отчётов')
 
     def setup_ui(self):
         layout = QHBoxLayout()
@@ -523,149 +559,208 @@ class ReportEditor(QDialog):
         self.preview_toolbar.addAction(color_action)
 
     def toggle_bold(self):
-        fmt = QTextCharFormat()
-        fmt.setFontWeight(QFont.Bold if self.preview.fontWeight() != QFont.Bold else QFont.Normal)
-        self.merge_format(fmt)
+        try:
+            fmt = QTextCharFormat()
+            fmt.setFontWeight(QFont.Bold if self.preview.fontWeight() != QFont.Bold else QFont.Normal)
+            self.merge_format(fmt)
+        except Exception as e:
+            logging.error(f"Ошибка форматирования жирного: {e}")
 
     def toggle_italic(self):
-        fmt = QTextCharFormat()
-        fmt.setFontItalic(not self.preview.fontItalic())
-        self.merge_format(fmt)
+        try:
+            fmt = QTextCharFormat()
+            fmt.setFontItalic(not self.preview.fontItalic())
+            self.merge_format(fmt)
+        except Exception as e:
+            logging.error(f"Ошибка форматирования курсива: {e}")
 
     def toggle_underline(self):
-        fmt = QTextCharFormat()
-        fmt.setFontUnderline(not self.preview.fontUnderline())
-        self.merge_format(fmt)
+        try:
+            fmt = QTextCharFormat()
+            fmt.setFontUnderline(not self.preview.fontUnderline())
+            self.merge_format(fmt)
+        except Exception as e:
+            logging.error(f"Ошибка форматирования подчёркивания: {e}")
 
     def merge_format(self, format):
-        cursor = self.preview.textCursor()
-        if not cursor.hasSelection():
-            cursor.select(QTextCursor.WordUnderCursor)
-        cursor.mergeCharFormat(format)
-        self.preview.mergeCurrentCharFormat(format)
+        try:
+            cursor = self.preview.textCursor()
+            if not cursor.hasSelection():
+                cursor.select(QTextCursor.WordUnderCursor)
+            cursor.mergeCharFormat(format)
+            self.preview.mergeCurrentCharFormat(format)
+        except Exception as e:
+            logging.error(f"Ошибка слияния формата: {e}")
 
     def set_alignment(self, alignment):
-        self.preview.setAlignment(alignment)
+        try:
+            self.preview.setAlignment(alignment)
+        except Exception as e:
+            logging.error(f"Ошибка установки выравнивания: {e}")
 
     def bullet_list(self):
-        cursor = self.preview.textCursor()
-        cursor.createList(QTextListFormat.ListDisc)
+        try:
+            cursor = self.preview.textCursor()
+            cursor.createList(QTextListFormat.ListDisc)
+        except Exception as e:
+            logging.error(f"Ошибка создания маркеров: {e}")
 
     def numbered_list(self):
-        cursor = self.preview.textCursor()
-        cursor.createList(QTextListFormat.ListDecimal)
+        try:
+            cursor = self.preview.textCursor()
+            cursor.createList(QTextListFormat.ListDecimal)
+        except Exception as e:
+            logging.error(f"Ошибка создания нумерованного списка: {e}")
 
     def insert_link(self):
-        url, ok = QInputDialog.getText(self, 'Вставить ссылку', 'URL:')
-        if ok:
-            text = self.preview.textCursor().selectedText() or 'Ссылка'
-            self.preview.textCursor().insertHtml(f'<a href="{url}">{text}</a>')
+        try:
+            url, ok = QInputDialog.getText(self, 'Вставить ссылку', 'URL:')
+            if ok:
+                text = self.preview.textCursor().selectedText() or 'Ссылка'
+                self.preview.textCursor().insertHtml(f'<a href="{url}">{text}</a>')
+        except Exception as e:
+            logging.error(f"Ошибка вставки ссылки: {e}")
 
     def insert_image(self):
-        file, _ = QFileDialog.getOpenFileName(self, 'Выбрать изображение', '', 'Images (*.png *.jpg *.bmp)')
-        if file:
-            cursor = self.preview.textCursor()
-            image_format = QTextImageFormat()
-            image_format.setName(file)
-            cursor.insertImage(image_format)
+        try:
+            file, _ = QFileDialog.getOpenFileName(self, 'Выбрать изображение', '', 'Images (*.png *.jpg *.bmp)')
+            if file:
+                cursor = self.preview.textCursor()
+                image_format = QTextImageFormat()
+                image_format.setName(file)
+                cursor.insertImage(image_format)
+        except Exception as e:
+            logging.error(f"Ошибка вставки изображения: {e}")
 
     def set_text_color(self):
-        color = QColorDialog.getColor()
-        if color.isValid():
-            self.preview.setTextColor(color)
+        try:
+            color = QColorDialog.getColor()
+            if color.isValid():
+                self.preview.setTextColor(color)
+        except Exception as e:
+            logging.error(f"Ошибка установки цвета текста: {e}")
 
     def drop_event(self, event):
-        field = event.mimeData().text()
-        if field not in [self.selected_fields.item(i).text() for i in range(self.selected_fields.count())]:
-            command = self.AddFieldCommand(self.selected_fields, field)
-            self.undo_stack.push(command)
-        event.accept()
+        try:
+            field = event.mimeData().text()
+            if field not in [self.selected_fields.item(i).text() for i in range(self.selected_fields.count())]:
+                command = self.AddFieldCommand(self.selected_fields, field)
+                self.undo_stack.push(command)
+            event.accept()
+        except Exception as e:
+            logging.error(f"Ошибка drop события: {e}")
 
     def add_field(self):
-        current = self.available_fields.currentItem()
-        if current and current.text() not in [self.selected_fields.item(i).text() for i in range(self.selected_fields.count())]:
-            command = self.AddFieldCommand(self.selected_fields, current.text())
-            self.undo_stack.push(command)
+        try:
+            current = self.available_fields.currentItem()
+            if current and current.text() not in [self.selected_fields.item(i).text() for i in range(self.selected_fields.count())]:
+                command = self.AddFieldCommand(self.selected_fields, current.text())
+                self.undo_stack.push(command)
+        except Exception as e:
+            logging.error(f"Ошибка добавления поля: {e}")
 
     def remove_field(self):
-        current = self.selected_fields.currentItem()
-        if current:
-            command = self.RemoveFieldCommand(self.selected_fields, current.text())
-            self.undo_stack.push(command)
+        try:
+            current = self.selected_fields.currentItem()
+            if current:
+                command = self.RemoveFieldCommand(self.selected_fields, current.text())
+                self.undo_stack.push(command)
+        except Exception as e:
+            logging.error(f"Ошибка удаления поля: {e}")
 
     def insert_data(self):
-        self.config['fields'] = [self.selected_fields.item(i).text().lower() for i in range(self.selected_fields.count())]
-        self.config['filters'] = {
-            'category': self.category_filter.currentText() if self.category_filter.currentText() != 'Все' else None,
-            'condition': self.condition_filter.currentText() if self.condition_filter.currentText() != 'Все' else None,
-            'date_from': self.date_from.date().toString('yyyy-MM-dd'),
-            'date_to': self.date_to.date().toString('yyyy-MM-dd')
-        }
-        self.config['viz_type'] = {'Таблица': 'table', 'Столбчатая диаграмма': 'bar', 'Круговая диаграмма': 'pie', 'Линейный график': 'line'}[self.viz_type.currentText()]
-        self.config['font'] = self.font_input.currentFont().family()
-        self.config['font_size'] = self.font_size.value()
-        self.config['header_color'] = self.header_color.text()
-        self.config['bg_color'] = self.bg_color.text()
-        self.update_preview()
+        try:
+            self.config['fields'] = [self.selected_fields.item(i).text().lower() for i in range(self.selected_fields.count())]
+            self.config['filters'] = {
+                'category': self.category_filter.currentText() if self.category_filter.currentText() != 'Все' else None,
+                'condition': self.condition_filter.currentText() if self.condition_filter.currentText() != 'Все' else None,
+                'date_from': self.date_from.date().toString('yyyy-MM-dd'),
+                'date_to': self.date_to.date().toString('yyyy-MM-dd')
+            }
+            self.config['viz_type'] = {'Таблица': 'table', 'Столбчатая диаграмма': 'bar', 'Круговая диаграмма': 'pie', 'Линейный график': 'line'}[self.viz_type.currentText()]
+            self.config['font'] = self.font_input.currentFont().family()
+            self.config['font_size'] = self.font_size.value()
+            self.config['header_color'] = self.header_color.text()
+            self.config['bg_color'] = self.bg_color.text()
+            self.update_preview()
+        except Exception as e:
+            logging.error(f"Ошибка вставки данных: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось вставить данные')
 
     def update_preview(self):
-        self.config['fields'] = [self.selected_fields.item(i).text().lower() for i in range(self.selected_fields.count())]
-        self.config['name'] = self.name_input.text()
-        report = ReportGenerator(self.db, self.config, 'html', 'school_logo.png')
-        report.generate_html('preview.html')
-        with open('preview.html', 'r', encoding='utf-8') as f:
-            generated_html = f.read()
-        self.preview.setHtml(generated_html)
-        self.config['preview_html'] = generated_html  # Инициализируем сгенерированным HTML
+        try:
+            self.config['fields'] = [self.selected_fields.item(i).text().lower() for i in range(self.selected_fields.count())]
+            self.config['name'] = self.name_input.text()
+            report = ReportGenerator(self.db, self.config, 'html', 'school_logo.png')
+            report.generate_html('preview.html')
+            with open('preview.html', 'r', encoding='utf-8') as f:
+                generated_html = f.read()
+            self.preview.setHtml(generated_html)
+            self.config['preview_html'] = generated_html  # Инициализируем сгенерированным HTML
+        except Exception as e:
+            logging.error(f"Ошибка обновления предпросмотра: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось обновить предпросмотр')
 
     def print_preview(self):
         """Печать содержимого предпросмотра"""
-        printer = QPrinter()
-        dialog = QPrintDialog(printer, self)
-        if dialog.exec_() == QPrintDialog.Accepted:
-            self.preview.print_(printer)
-            QMessageBox.information(self, 'Успех', 'Отчёт отправлен на печать')
+        try:
+            printer = QPrinter()
+            dialog = QPrintDialog(printer, self)
+            if dialog.exec_() == QPrintDialog.Accepted:
+                self.preview.print_(printer)
+                QMessageBox.information(self, 'Успех', 'Отчёт отправлен на печать')
+        except Exception as e:
+            logging.error(f"Ошибка печати: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось напечатать отчёт')
 
     def save_report(self):
-        self.config['name'] = self.name_input.text()
-        self.config['fields'] = [self.selected_fields.item(i).text().lower() for i in range(self.selected_fields.count())]
-        self.config['filters'] = {
-            'category': self.category_filter.currentText() if self.category_filter.currentText() != 'Все' else None,
-            'condition': self.condition_filter.currentText() if self.condition_filter.currentText() != 'Все' else None,
-            'date_from': self.date_from.date().toString('yyyy-MM-dd'),
-            'date_to': self.date_to.date().toString('yyyy-MM-dd')
-        }
-        self.config['viz_type'] = {'Таблица': 'table', 'Столбчатая диаграмма': 'bar', 'Круговая диаграмма': 'pie', 'Линейный график': 'line'}[self.viz_type.currentText()]
-        self.config['font'] = self.font_input.currentFont().family()
-        self.config['font_size'] = self.font_size.value()
-        self.config['header_color'] = self.header_color.text()
-        self.config['bg_color'] = self.bg_color.text()
-        self.config['preview_html'] = self.preview.toHtml()  # Сохраняем отредактированный HTML
-        cursor = self.db.conn.cursor()
-        if self.report_id:
-            cursor.execute("UPDATE report_templates SET config = ?, type = ? WHERE id = ?",
-                           (json.dumps(self.config), self.config['viz_type'], self.report_id))
-        else:
-            cursor.execute("INSERT INTO report_templates (user_id, config, type, created_at) VALUES (?, ?, ?, ?)",
-                           (self.user_id, json.dumps(self.config), self.config['viz_type'], datetime.datetime.now()))
-        self.db.conn.commit()
-        self.db.log_action(self.user_id, f"Сохранён отчёт {self.config['name']}")
-        QMessageBox.information(self, 'Успех', 'Отчёт сохранён')
-        self.accept()
+        try:
+            self.config['name'] = self.name_input.text()
+            self.config['fields'] = [self.selected_fields.item(i).text().lower() for i in range(self.selected_fields.count())]
+            self.config['filters'] = {
+                'category': self.category_filter.currentText() if self.category_filter.currentText() != 'Все' else None,
+                'condition': self.condition_filter.currentText() if self.condition_filter.currentText() != 'Все' else None,
+                'date_from': self.date_from.date().toString('yyyy-MM-dd'),
+                'date_to': self.date_to.date().toString('yyyy-MM-dd')
+            }
+            self.config['viz_type'] = {'Таблица': 'table', 'Столбчатая диаграмма': 'bar', 'Круговая диаграмма': 'pie', 'Линейный график': 'line'}[self.viz_type.currentText()]
+            self.config['font'] = self.font_input.currentFont().family()
+            self.config['font_size'] = self.font_size.value()
+            self.config['header_color'] = self.header_color.text()
+            self.config['bg_color'] = self.bg_color.text()
+            self.config['preview_html'] = self.preview.toHtml()  # Сохраняем отредактированный HTML
+            cursor = self.db.conn.cursor()
+            if self.report_id:
+                cursor.execute("UPDATE report_templates SET config = ?, type = ? WHERE id = ?",
+                               (json.dumps(self.config), self.config['viz_type'], self.report_id))
+            else:
+                cursor.execute("INSERT INTO report_templates (user_id, config, type, created_at) VALUES (?, ?, ?, ?)",
+                               (self.user_id, json.dumps(self.config), self.config['viz_type'], datetime.datetime.now()))
+            self.db.conn.commit()
+            self.db.log_action(self.user_id, f"Сохранён отчёт {self.config['name']}")
+            QMessageBox.information(self, 'Успех', 'Отчёт сохранён')
+            self.accept()
+        except Exception as e:
+            logging.error(f"Ошибка сохранения отчёта: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось сохранить отчёт')
 
     def show_inventory(self):
         """Показывает таблицу инвентаря в отдельном диалоге"""
-        dialog = QDialog(self)
-        dialog.setWindowTitle('Таблица инвентаря')
-        layout = QVBoxLayout()
-        table = QTableView()
-        model = InventoryTableModel(self.db)
-        table.setModel(model)
-        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        layout.addWidget(table)
-        dialog.setLayout(layout)
-        dialog.resize(800, 600)
-        dialog.exec_()
+        try:
+            dialog = QDialog(self)
+            dialog.setWindowTitle('Таблица инвентаря')
+            layout = QVBoxLayout()
+            table = QTableView()
+            model = InventoryTableModel(self.db)
+            table.setModel(model)
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+            layout.addWidget(table)
+            dialog.setLayout(layout)
+            dialog.resize(800, 600)
+            dialog.exec_()
+        except Exception as e:
+            logging.error(f"Ошибка показа таблицы инвентаря: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось показать таблицу инвентаря')
 
 class InventoryTableModel(QAbstractTableModel):
     """Модель таблицы с пагинацией для инвентаря"""
@@ -677,11 +772,15 @@ class InventoryTableModel(QAbstractTableModel):
         self.data = self.load_page()
 
     def load_page(self):
-        offset = self.page * self.page_size
-        query = f"SELECT * FROM inventory ORDER BY id OFFSET {offset} ROWS FETCH NEXT {self.page_size} ROWS ONLY"
-        cursor = self.db.conn.cursor()
-        cursor.execute(query)
-        return cursor.fetchall()
+        try:
+            offset = self.page * self.page_size
+            query = f"SELECT * FROM inventory ORDER BY id OFFSET {offset} ROWS FETCH NEXT {self.page_size} ROWS ONLY"
+            cursor = self.db.conn.cursor()
+            cursor.execute(query)
+            return cursor.fetchall()
+        except Exception as e:
+            logging.error(f"Ошибка загрузки страницы инвентаря: {e}")
+            return []
 
     def rowCount(self, parent=None):
         return len(self.data)
@@ -717,10 +816,14 @@ class Database:
         self.server = 'H9ISE'
         self.database = 'inventoryyyyyyyy'
         self.conn = None
-        self.connect_or_create()
-        self.create_tables()
-        self.add_default_users()
-        self.add_default_templates()
+        try:
+            self.connect_or_create()
+            self.create_tables()
+            self.add_default_users()
+            self.add_default_templates()
+        except Exception as e:
+            logging.error(f"Ошибка инициализации базы данных: {e}")
+            QMessageBox.warning(None, 'Ошибка', 'Не удалось подключиться к базе данных')
 
     def connect_or_create(self):
         master_conn_str = f"DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={self.server};DATABASE=master;Trusted_Connection=yes;"
@@ -746,8 +849,8 @@ class Database:
             raise
 
     def create_tables(self):
-        cursor = self.conn.cursor()
         try:
+            cursor = self.conn.cursor()
             cursor.execute("""
                 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='users' AND xtype='U')
                 CREATE TABLE users (
@@ -838,8 +941,8 @@ class Database:
             raise
 
     def add_default_users(self):
-        cursor = self.conn.cursor()
         try:
+            cursor = self.conn.cursor()
             hashed = bcrypt.hashpw('admin'.encode(), bcrypt.gensalt())
             cursor.execute("""
                 IF NOT EXISTS (SELECT 1 FROM users WHERE username = 'admin')
@@ -863,8 +966,8 @@ class Database:
             raise
 
     def add_default_templates(self):
-        cursor = self.conn.cursor()
         try:
+            cursor = self.conn.cursor()
             templates = [
                 {
                     'name': 'Полный инвентарь',
@@ -913,9 +1016,9 @@ class Database:
             raise
 
     def add_user(self, username, password, role):
-        hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
-        cursor = self.conn.cursor()
         try:
+            hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt())
+            cursor = self.conn.cursor()
             cursor.execute('INSERT INTO users (username, password, role) VALUES (?, ?, ?)', (username, hashed, role))
             self.conn.commit()
         except pyodbc.Error as e:
@@ -924,16 +1027,20 @@ class Database:
             raise
 
     def authenticate(self, username, password):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT id, password, role FROM users WHERE username = ?', (username,))
-        user = cursor.fetchone()
-        if user and bcrypt.checkpw(password.encode(), user[1]):
-            return user[0], user[2]
-        return None, None
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT id, password, role FROM users WHERE username = ?', (username,))
+            user = cursor.fetchone()
+            if user and bcrypt.checkpw(password.encode(), user[1]):
+                return user[0], user[2]
+            return None, None
+        except Exception as e:
+            logging.error(f"Ошибка аутентификации: {e}")
+            return None, None
 
     def log_action(self, user_id, action):
-        cursor = self.conn.cursor()
         try:
+            cursor = self.conn.cursor()
             cursor.execute('INSERT INTO logs (user_id, action) VALUES (?, ?)', (user_id, action))
             self.conn.commit()
             logging.info(f'Пользователь {user_id} выполнил действие: {action}')
@@ -942,8 +1049,8 @@ class Database:
             logging.error(f"Ошибка логирования действия для пользователя {user_id}: {e}")
 
     def log_report_action(self, report_id, user_id, action):
-        cursor = self.conn.cursor()
         try:
+            cursor = self.conn.cursor()
             cursor.execute('INSERT INTO report_history (report_id, user_id, action, timestamp) VALUES (?, ?, ?, ?)',
                            (report_id, user_id, action, datetime.datetime.now()))
             self.conn.commit()
@@ -954,13 +1061,17 @@ class Database:
 
     @lru_cache(maxsize=100)
     def get_inventory(self):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT * FROM inventory')
-        return cursor.fetchall()
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT * FROM inventory')
+            return cursor.fetchall()
+        except Exception as e:
+            logging.error(f"Ошибка получения инвентаря: {e}")
+            return []
 
     def add_inventory(self, name, category, quantity, condition, purchase_date, service_life, photo=None):
-        cursor = self.conn.cursor()
         try:
+            cursor = self.conn.cursor()
             cursor.execute("""
                 INSERT INTO inventory (name, category, quantity, condition, purchase_date, service_life, photo)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -973,8 +1084,8 @@ class Database:
             raise
 
     def update_inventory(self, id, name, category, quantity, condition, purchase_date, service_life, photo=None):
-        cursor = self.conn.cursor()
         try:
+            cursor = self.conn.cursor()
             cursor.execute("""
                 UPDATE inventory SET name=?, category=?, quantity=?, condition=?, purchase_date=?, service_life=?, photo=?
                 WHERE id=?
@@ -987,8 +1098,8 @@ class Database:
             raise
 
     def delete_inventory(self, id):
-        cursor = self.conn.cursor()
         try:
+            cursor = self.conn.cursor()
             cursor.execute('DELETE FROM inventory WHERE id=?', (id,))
             self.conn.commit()
             self.get_inventory.cache_clear()
@@ -998,8 +1109,8 @@ class Database:
             raise
 
     def add_booking(self, inventory_id, user_id, booking_date, class_):
-        cursor = self.conn.cursor()
         try:
+            cursor = self.conn.cursor()
             cursor.execute('INSERT INTO bookings (inventory_id, user_id, booking_date, class) VALUES (?, ?, ?, ?)',
                            (inventory_id, user_id, booking_date, class_))
             self.conn.commit()
@@ -1009,27 +1120,42 @@ class Database:
             raise
 
     def get_bookings(self, user_id=None):
-        cursor = self.conn.cursor()
-        if user_id:
-            cursor.execute('SELECT * FROM bookings WHERE user_id = ?', (user_id,))
-        else:
-            cursor.execute('SELECT * FROM bookings')
-        return cursor.fetchall()
+        try:
+            cursor = self.conn.cursor()
+            if user_id:
+                cursor.execute('SELECT * FROM bookings WHERE user_id = ?', (user_id,))
+            else:
+                cursor.execute('SELECT * FROM bookings')
+            return cursor.fetchall()
+        except Exception as e:
+            logging.error(f"Ошибка получения бронирований: {e}")
+            return []
 
     def search_inventory(self, query):
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT * FROM inventory WHERE name LIKE ? OR category LIKE ? OR condition LIKE ?
-        """, (f'%{query}%', f'%{query}%', f'%{query}%'))
-        return cursor.fetchall()
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                SELECT * FROM inventory WHERE name LIKE ? OR category LIKE ? OR condition LIKE ?
+            """, (f'%{query}%', f'%{query}%', f'%{query}%'))
+            return cursor.fetchall()
+        except Exception as e:
+            logging.error(f"Ошибка поиска инвентаря: {e}")
+            return []
 
     def get_users(self):
-        cursor = self.conn.cursor()
-        cursor.execute('SELECT id, username, role FROM users')
-        return cursor.fetchall()
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute('SELECT id, username, role FROM users')
+            return cursor.fetchall()
+        except Exception as e:
+            logging.error(f"Ошибка получения пользователей: {e}")
+            return []
 
     def close(self):
-        self.conn.close()
+        try:
+            self.conn.close()
+        except Exception as e:
+            logging.error(f"Ошибка закрытия соединения с БД: {e}")
 
 class LoginDialog(QDialog):
     """Окно входа в систему"""
@@ -1053,12 +1179,16 @@ class LoginDialog(QDialog):
         self.role = None
 
     def login(self):
-        self.user_id, self.role = self.db.authenticate(self.username.text(), self.password.text())
-        if self.user_id:
-            self.db.log_action(self.user_id, 'Вход выполнен')
-            self.accept()
-        else:
-            QMessageBox.warning(self, 'Ошибка', 'Неверные учетные данные')
+        try:
+            self.user_id, self.role = self.db.authenticate(self.username.text(), self.password.text())
+            if self.user_id:
+                self.db.log_action(self.user_id, 'Вход выполнен')
+                self.accept()
+            else:
+                QMessageBox.warning(self, 'Ошибка', 'Неверные учетные данные')
+        except Exception as e:
+            logging.error(f"Ошибка входа: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось войти в систему')
 
 class BaseMainWindow(QMainWindow):
     """Базовое окно для интерфейсов"""
@@ -1078,7 +1208,11 @@ class BaseMainWindow(QMainWindow):
         self.theme = 'light'
         self.set_theme()
 
-        self.setup_ui()
+        try:
+            self.setup_ui()
+        except Exception as e:
+            logging.error(f"Ошибка настройки UI: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось инициализировать интерфейс')
 
     def eventFilter(self, obj, event):
         if event.type() in [QEvent.KeyPress, QEvent.MouseButtonPress, QEvent.MouseMove]:
@@ -1133,30 +1267,37 @@ class BaseMainWindow(QMainWindow):
         self.set_theme()
 
     def backup_db(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle('Резервное копирование базы данных')
-        layout = QVBoxLayout()
-        progress = QProgressBar()
-        progress.setValue(0)
-        layout.addWidget(progress)
-        backup_btn = QPushButton('Начать копирование')
-        layout.addWidget(backup_btn)
-        dialog.setLayout(layout)
-        def do_backup():
-            for i in range(101):
-                progress.setValue(i)
-                time.sleep(0.05)
-            QMessageBox.information(self, 'Резервное копирование', 'Копирование завершено (используйте SSMS для реального копирования).')
-            dialog.close()
-        backup_btn.clicked.connect(do_backup)
-        dialog.exec_()
+        try:
+            dialog = QDialog(self)
+            dialog.setWindowTitle('Резервное копирование базы данных')
+            layout = QVBoxLayout()
+            progress = QProgressBar()
+            progress.setValue(0)
+            layout.addWidget(progress)
+            backup_btn = QPushButton('Начать копирование')
+            layout.addWidget(backup_btn)
+            dialog.setLayout(layout)
+            def do_backup():
+                for i in range(101):
+                    progress.setValue(i)
+                    time.sleep(0.05)
+                QMessageBox.information(self, 'Резервное копирование', 'Копирование завершено (используйте SSMS для реального копирования).')
+                dialog.close()
+            backup_btn.clicked.connect(do_backup)
+            dialog.exec_()
+        except Exception as e:
+            logging.error(f"Ошибка резервного копирования: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось выполнить резервное копирование')
 
     def check_reminders(self):
-        items = self.db.get_inventory()
-        current_year = datetime.date.today().year
-        reminders = [item[1] for item in items if item[5] and datetime.date.fromisoformat(str(item[5])).year + item[6] <= current_year]
-        if reminders:
-            self.tray.showMessage('Напоминание', f'Необходима замена предметов: {", ".join(reminders)}', QSystemTrayIcon.Information)
+        try:
+            items = self.db.get_inventory()
+            current_year = datetime.date.today().year
+            reminders = [item[1] for item in items if item[5] and datetime.date.fromisoformat(str(item[5])).year + item[6] <= current_year]
+            if reminders:
+                self.tray.showMessage('Напоминание', f'Необходима замена предметов: {", ".join(reminders)}', QSystemTrayIcon.Information)
+        except Exception as e:
+            logging.error(f"Ошибка проверки напоминаний: {e}")
 
     def closeEvent(self, event):
         self.db.close()
@@ -1217,129 +1358,149 @@ class AdminWindow(BaseMainWindow):
         self.tabs.addTab(tab, 'Инвентарь')
 
     def add_item_dialog(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle('Добавить предмет')
-        layout = QFormLayout()
-        name = QLineEdit()
-        category = QLineEdit()
-        quantity = QSpinBox()
-        condition = QComboBox()
-        condition.addItems(['Новый', 'Хороший', 'Изношенный', 'Сломанный'])
-        purchase_date = QDateEdit(QDate.currentDate())
-        service_life = QSpinBox()
-        photo_path = [None]
-        photo_btn = QPushButton('Загрузить фото')
-        photo_btn.clicked.connect(lambda: photo_path.__setitem__(0, QFileDialog.getOpenFileName(self, 'Выбрать фото')[0]))
-        add_btn = QPushButton('Добавить')
-        def add_item():
-            photo = None
-            if photo_path[0]:
-                try:
-                    with open(photo_path[0], 'rb') as f:
-                        photo = f.read()
-                except Exception as e:
-                    logging.error(f"Ошибка чтения фото: {e}")
-                    QMessageBox.warning(self, 'Ошибка', 'Не удалось загрузить фото')
-                    return
-            self.db.add_inventory(name.text(), category.text(), quantity.value(), condition.currentText(),
-                                  purchase_date.date().toString('yyyy-MM-dd'), service_life.value(), photo)
-            self.db.log_action(self.user_id, f'Добавлен предмет {name.text()}')
-            self.model.data = self.model.load_page()
-            self.model.layoutChanged.emit()
-            dialog.close()
-        add_btn.clicked.connect(add_item)
-        layout.addRow('Название', name)
-        layout.addRow('Категория', category)
-        layout.addRow('Количество', quantity)
-        layout.addRow('Состояние', condition)
-        layout.addRow('Дата покупки', purchase_date)
-        layout.addRow('Срок службы (годы)', service_life)
-        layout.addRow('Фото', photo_btn)
-        layout.addRow(add_btn)
-        dialog.setLayout(layout)
-        dialog.exec_()
+        try:
+            dialog = QDialog(self)
+            dialog.setWindowTitle('Добавить предмет')
+            layout = QFormLayout()
+            name = QLineEdit()
+            category = QLineEdit()
+            quantity = QSpinBox()
+            condition = QComboBox()
+            condition.addItems(['Новый', 'Хороший', 'Изношенный', 'Сломанный'])
+            purchase_date = QDateEdit(QDate.currentDate())
+            service_life = QSpinBox()
+            photo_path = [None]
+            photo_btn = QPushButton('Загрузить фото')
+            photo_btn.clicked.connect(lambda: photo_path.__setitem__(0, QFileDialog.getOpenFileName(self, 'Выбрать фото')[0]))
+            add_btn = QPushButton('Добавить')
+            def add_item():
+                photo = None
+                if photo_path[0]:
+                    try:
+                        with open(photo_path[0], 'rb') as f:
+                            photo = f.read()
+                    except Exception as e:
+                        logging.error(f"Ошибка чтения фото: {e}")
+                        QMessageBox.warning(self, 'Ошибка', 'Не удалось загрузить фото')
+                        return
+                self.db.add_inventory(name.text(), category.text(), quantity.value(), condition.currentText(),
+                                      purchase_date.date().toString('yyyy-MM-dd'), service_life.value(), photo)
+                self.db.log_action(self.user_id, f'Добавлен предмет {name.text()}')
+                self.model.data = self.model.load_page()
+                self.model.layoutChanged.emit()
+                dialog.close()
+            add_btn.clicked.connect(add_item)
+            layout.addRow('Название', name)
+            layout.addRow('Категория', category)
+            layout.addRow('Количество', quantity)
+            layout.addRow('Состояние', condition)
+            layout.addRow('Дата покупки', purchase_date)
+            layout.addRow('Срок службы (годы)', service_life)
+            layout.addRow('Фото', photo_btn)
+            layout.addRow(add_btn)
+            dialog.setLayout(layout)
+            dialog.exec_()
+        except Exception as e:
+            logging.error(f"Ошибка диалога добавления предмета: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось добавить предмет')
 
     def update_item_dialog(self):
-        row = self.inventory_table.currentIndex().row()
-        if row < 0:
-            QMessageBox.warning(self, 'Ошибка', 'Выберите предмет')
-            return
-        id = int(self.model.data[row][0])
-        item = next(i for i in self.db.get_inventory() if i[0] == id)
-        dialog = QDialog(self)
-        dialog.setWindowTitle('Обновить предмет')
-        layout = QFormLayout()
-        name = QLineEdit(item[1])
-        category = QLineEdit(item[2])
-        quantity = QSpinBox()
-        quantity.setValue(item[3])
-        condition = QComboBox()
-        condition.addItems(['Новый', 'Хороший', 'Изношенный', 'Сломанный'])
-        condition.setCurrentText(item[4])
-        purchase_date = QDateEdit(QDate.fromString(item[5], 'yyyy-MM-dd'))
-        service_life = QSpinBox()
-        service_life.setValue(item[6])
-        photo_path = [None]
-        photo_btn = QPushButton('Загрузить новое фото')
-        photo_btn.clicked.connect(lambda: photo_path.__setitem__(0, QFileDialog.getOpenFileName(self, 'Выбрать фото')[0]))
-        update_btn = QPushButton('Обновить')
-        def update_item():
-            photo = item[7]
-            if photo_path[0]:
-                try:
-                    with open(photo_path[0], 'rb') as f:
-                        photo = f.read()
-                except Exception as e:
-                    logging.error(f"Ошибка чтения фото: {e}")
-                    QMessageBox.warning(self, 'Ошибка', 'Не удалось загрузить фото')
-                    return
-            self.db.update_inventory(id, name.text(), category.text(), quantity.value(), condition.currentText(),
-                                     purchase_date.date().toString('yyyy-MM-dd'), service_life.value(), photo)
-            self.db.log_action(self.user_id, f'Обновлён предмет {id}')
-            self.model.data = self.model.load_page()
-            self.model.layoutChanged.emit()
-            dialog.close()
-        update_btn.clicked.connect(update_item)
-        layout.addRow('Название', name)
-        layout.addRow('Категория', category)
-        layout.addRow('Количество', quantity)
-        layout.addRow('Состояние', condition)
-        layout.addRow('Дата покупки', purchase_date)
-        layout.addRow('Срок службы (годы)', service_life)
-        layout.addRow('Фото', photo_btn)
-        layout.addRow(update_btn)
-        dialog.setLayout(layout)
-        dialog.exec_()
+        try:
+            row = self.inventory_table.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, 'Ошибка', 'Выберите предмет')
+                return
+            id = int(self.model.data[row][0])
+            item = next(i for i in self.db.get_inventory() if i[0] == id)
+            dialog = QDialog(self)
+            dialog.setWindowTitle('Обновить предмет')
+            layout = QFormLayout()
+            name = QLineEdit(item[1])
+            category = QLineEdit(item[2])
+            quantity = QSpinBox()
+            quantity.setValue(item[3])
+            condition = QComboBox()
+            condition.addItems(['Новый', 'Хороший', 'Изношенный', 'Сломанный'])
+            condition.setCurrentText(item[4])
+            purchase_date = QDateEdit(QDate.fromString(item[5], 'yyyy-MM-dd'))
+            service_life = QSpinBox()
+            service_life.setValue(item[6])
+            photo_path = [None]
+            photo_btn = QPushButton('Загрузить новое фото')
+            photo_btn.clicked.connect(lambda: photo_path.__setitem__(0, QFileDialog.getOpenFileName(self, 'Выбрать фото')[0]))
+            update_btn = QPushButton('Обновить')
+            def update_item():
+                photo = item[7]
+                if photo_path[0]:
+                    try:
+                        with open(photo_path[0], 'rb') as f:
+                            photo = f.read()
+                    except Exception as e:
+                        logging.error(f"Ошибка чтения фото: {e}")
+                        QMessageBox.warning(self, 'Ошибка', 'Не удалось загрузить фото')
+                        return
+                self.db.update_inventory(id, name.text(), category.text(), quantity.value(), condition.currentText(),
+                                         purchase_date.date().toString('yyyy-MM-dd'), service_life.value(), photo)
+                self.db.log_action(self.user_id, f'Обновлён предмет {id}')
+                self.model.data = self.model.load_page()
+                self.model.layoutChanged.emit()
+                dialog.close()
+            update_btn.clicked.connect(update_item)
+            layout.addRow('Название', name)
+            layout.addRow('Категория', category)
+            layout.addRow('Количество', quantity)
+            layout.addRow('Состояние', condition)
+            layout.addRow('Дата покупки', purchase_date)
+            layout.addRow('Срок службы (годы)', service_life)
+            layout.addRow('Фото', photo_btn)
+            layout.addRow(update_btn)
+            dialog.setLayout(layout)
+            dialog.exec_()
+        except Exception as e:
+            logging.error(f"Ошибка диалога обновления предмета: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось обновить предмет')
 
     def delete_item(self):
-        row = self.inventory_table.currentIndex().row()
-        if row < 0:
-            QMessageBox.warning(self, 'Ошибка', 'Выберите предмет')
-            return
-        id = int(self.model.data[row][0])
-        self.db.delete_inventory(id)
-        self.db.log_action(self.user_id, f'Удалён предмет {id}')
-        self.model.data = self.model.load_page()
-        self.model.layoutChanged.emit()
+        try:
+            row = self.inventory_table.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, 'Ошибка', 'Выберите предмет')
+                return
+            id = int(self.model.data[row][0])
+            self.db.delete_inventory(id)
+            self.db.log_action(self.user_id, f'Удалён предмет {id}')
+            self.model.data = self.model.load_page()
+            self.model.layoutChanged.emit()
+        except Exception as e:
+            logging.error(f"Ошибка удаления предмета: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось удалить предмет')
 
     def generate_qr(self):
-        row = self.inventory_table.currentIndex().row()
-        if row < 0:
-            QMessageBox.warning(self, 'Ошибка', 'Выберите предмет')
-            return
-        id = self.model.data[row][0]
-        qr = qrcode.QRCode()
-        qr.add_data(f'ID инвентаря: {id} - Название: {self.model.data[row][1]}')
-        qr.make(fit=True)
-        img = qr.make_image(fill='black', back_color='white')
-        img.save(f'qr_{id}.png')
-        QMessageBox.information(self, 'QR-код сгенерирован', f'QR-код сохранён как qr_{id}.png')
+        try:
+            row = self.inventory_table.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, 'Ошибка', 'Выберите предмет')
+                return
+            id = self.model.data[row][0]
+            qr = qrcode.QRCode()
+            qr.add_data(f'ID инвентаря: {id} - Название: {self.model.data[row][1]}')
+            qr.make(fit=True)
+            img = qr.make_image(fill='black', back_color='white')
+            img.save(f'qr_{id}.png')
+            QMessageBox.information(self, 'QR-код сгенерирован', f'QR-код сохранён как qr_{id}.png')
+        except Exception as e:
+            logging.error(f"Ошибка генерации QR: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось сгенерировать QR-код')
 
     def search_inventory(self):
-        query = self.search_input.text()
-        items = self.db.search_inventory(query)
-        self.model.data = items
-        self.model.layoutChanged.emit()
+        try:
+            query = self.search_input.text()
+            items = self.db.search_inventory(query)
+            self.model.data = items
+            self.model.layoutChanged.emit()
+        except Exception as e:
+            logging.error(f"Ошибка поиска инвентаря: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось выполнить поиск')
 
     def add_users_tab(self):
         tab = QWidget()
@@ -1412,114 +1573,142 @@ class AdminWindow(BaseMainWindow):
         self.tabs.addTab(tab, 'Отчёты')
 
     def create_report(self):
-        editor = ReportEditor(self.db, self.user_id)
-        if editor.exec_():
-            self.reports_model.refresh()
-            self.db.log_report_action(None, self.user_id, 'Создан новый отчёт')
+        try:
+            editor = ReportEditor(self.db, self.user_id)
+            if editor.exec_():
+                self.reports_model.refresh()
+                self.db.log_report_action(None, self.user_id, 'Создан новый отчёт')
+        except Exception as e:
+            logging.error(f"Ошибка создания отчёта: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось создать отчёт')
 
     def show_report(self, index):
-        row = index.row()
-        report_id = self.reports_model.data[row][0]
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
-        config = json.loads(cursor.fetchone()[0])
-        self.preview.setHtml(config.get('preview_html', '<h1>Отчёт</h1>'))
+        try:
+            row = index.row()
+            report_id = self.reports_model.data[row][0]
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
+            config = json.loads(cursor.fetchone()[0])
+            self.preview.setHtml(config.get('preview_html', '<h1>Отчёт</h1>'))
+        except Exception as e:
+            logging.error(f"Ошибка показа отчёта: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось показать отчёт')
 
     def edit_report(self):
-        row = self.reports_table.currentIndex().row()
-        if row < 0:
-            QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
-            return
-        report_id = self.reports_model.data[row][0]
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
-        config = json.loads(cursor.fetchone()[0])
-        editor = ReportEditor(self.db, self.user_id, report_id, config)
-        if editor.exec_():
-            self.reports_model.refresh()
-            self.db.log_report_action(report_id, self.user_id, f'Отредактирован отчёт {config["name"]}')
-            self.show_report(self.reports_table.currentIndex())
+        try:
+            row = self.reports_table.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
+                return
+            report_id = self.reports_model.data[row][0]
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
+            config = json.loads(cursor.fetchone()[0])
+            editor = ReportEditor(self.db, self.user_id, report_id, config)
+            if editor.exec_():
+                self.reports_model.refresh()
+                self.db.log_report_action(report_id, self.user_id, f'Отредактирован отчёт {config["name"]}')
+                self.show_report(self.reports_table.currentIndex())
+        except Exception as e:
+            logging.error(f"Ошибка редактирования отчёта: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось редактировать отчёт')
 
     def delete_report(self):
-        row = self.reports_table.currentIndex().row()
-        if row < 0:
-            QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
-            return
-        report_id = self.reports_model.data[row][0]
-        cursor = self.db.conn.cursor()
-        cursor.execute("DELETE FROM report_templates WHERE id = ?", (report_id,))
-        self.db.conn.commit()
-        self.reports_model.refresh()
-        self.db.log_report_action(report_id, self.user_id, 'Удалён отчёт')
-        self.preview.setHtml('<h1>Выберите отчёт для предпросмотра</h1>')
+        try:
+            row = self.reports_table.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
+                return
+            report_id = self.reports_model.data[row][0]
+            cursor = self.db.conn.cursor()
+            cursor.execute("DELETE FROM report_templates WHERE id = ?", (report_id,))
+            self.db.conn.commit()
+            self.reports_model.refresh()
+            self.db.log_report_action(report_id, self.user_id, 'Удалён отчёт')
+            self.preview.setHtml('<h1>Выберите отчёт для предпросмотра</h1>')
+        except Exception as e:
+            logging.error(f"Ошибка удаления отчёта: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось удалить отчёт')
 
     def export_report(self):
-        row = self.reports_table.currentIndex().row()
-        if row < 0:
-            QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
-            return
-        report_id = self.reports_model.data[row][0]
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
-        config = json.loads(cursor.fetchone()[0])
-        dialog = QDialog(self)
-        dialog.setWindowTitle('Экспорт отчёта')
-        layout = QFormLayout()
-        format_selector = QComboBox()
-        format_selector.addItems(['PDF', 'Excel', 'HTML'])
-        layout.addRow('Формат', format_selector)
-        export_btn = QPushButton('Экспортировать')
-        def do_export():
-            report = ReportGenerator(self.db, config, format_selector.currentText().lower(), 'school_logo.png')
-            filename = f'report_{report_id}.{format_selector.currentText().lower()}'
-            report.export(filename)
-            QMessageBox.information(self, 'Успех', f'Отчёт экспортирован: {filename}')
-            self.db.log_report_action(report_id, self.user_id, f'Экспортирован отчёт в {format_selector.currentText()}')
-            dialog.close()
-        export_btn.clicked.connect(do_export)
-        layout.addRow(export_btn)
-        dialog.setLayout(layout)
-        dialog.exec_()
+        try:
+            row = self.reports_table.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
+                return
+            report_id = self.reports_model.data[row][0]
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
+            config = json.loads(cursor.fetchone()[0])
+            dialog = QDialog(self)
+            dialog.setWindowTitle('Экспорт отчёта')
+            layout = QFormLayout()
+            format_selector = QComboBox()
+            format_selector.addItems(['PDF', 'Excel', 'HTML'])
+            layout.addRow('Формат', format_selector)
+            export_btn = QPushButton('Экспортировать')
+            def do_export():
+                report = ReportGenerator(self.db, config, format_selector.currentText().lower(), 'school_logo.png')
+                filename = f'report_{report_id}.{format_selector.currentText().lower()}'
+                report.export(filename)
+                QMessageBox.information(self, 'Успех', f'Отчёт экспортирован: {filename}')
+                self.db.log_report_action(report_id, self.user_id, f'Экспортирован отчёт в {format_selector.currentText()}')
+                dialog.close()
+            export_btn.clicked.connect(do_export)
+            layout.addRow(export_btn)
+            dialog.setLayout(layout)
+            dialog.exec_()
+        except Exception as e:
+            logging.error(f"Ошибка экспорта отчёта: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось экспортировать отчёт')
 
     def share_report(self):
-        row = self.reports_table.currentIndex().row()
-        if row < 0:
-            QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
-            return
-        report_id = self.reports_model.data[row][0]
-        dialog = QDialog(self)
-        dialog.setWindowTitle('Поделиться отчётом')
-        layout = QFormLayout()
-        user_selector = QComboBox()
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT id, username FROM users WHERE id != ?", (self.user_id,))
-        users = cursor.fetchall()
-        user_selector.addItems([u[1] for u in users])
-        layout.addRow('Пользователь', user_selector)
-        share_btn = QPushButton('Поделиться')
-        def do_share():
-            target_user_id = users[user_selector.currentIndex()][0]
-            cursor.execute("SELECT config, type FROM report_templates WHERE id = ?", (report_id,))
-            config, report_type = cursor.fetchone()
-            cursor.execute("INSERT INTO report_templates (user_id, config, type, created_at) VALUES (?, ?, ?, ?)",
-                           (target_user_id, config, report_type, datetime.datetime.now()))
-            self.db.conn.commit()
-            QMessageBox.information(self, 'Успех', 'Отчёт поделён')
-            self.db.log_report_action(report_id, self.user_id, f'Отчёт поделён с пользователем {target_user_id}')
-            dialog.close()
-        share_btn.clicked.connect(do_share)
-        layout.addRow(share_btn)
-        dialog.setLayout(layout)
-        dialog.exec_()
+        try:
+            row = self.reports_table.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
+                return
+            report_id = self.reports_model.data[row][0]
+            dialog = QDialog(self)
+            dialog.setWindowTitle('Поделиться отчётом')
+            layout = QFormLayout()
+            user_selector = QComboBox()
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT id, username FROM users WHERE id != ?", (self.user_id,))
+            users = cursor.fetchall()
+            user_selector.addItems([u[1] for u in users])
+            layout.addRow('Пользователь', user_selector)
+            share_btn = QPushButton('Поделиться')
+            def do_share():
+                target_user_id = users[user_selector.currentIndex()][0]
+                cursor.execute("SELECT config, type FROM report_templates WHERE id = ?", (report_id,))
+                config, report_type = cursor.fetchone()
+                cursor.execute("INSERT INTO report_templates (user_id, config, type, created_at) VALUES (?, ?, ?, ?)",
+                               (target_user_id, config, report_type, datetime.datetime.now()))
+                self.db.conn.commit()
+                QMessageBox.information(self, 'Успех', 'Отчёт поделён')
+                self.db.log_report_action(report_id, self.user_id, f'Отчёт поделён с пользователем {target_user_id}')
+                dialog.close()
+            share_btn.clicked.connect(do_share)
+            layout.addRow(share_btn)
+            dialog.setLayout(layout)
+            dialog.exec_()
+        except Exception as e:
+            logging.error(f"Ошибка поделиться отчётом: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось поделиться отчётом')
 
     def add_logs_tab(self):
         tab = QWidget()
         layout = QVBoxLayout()
         logs_text = QTextEdit()
-        cursor = self.db.conn.cursor()
-        cursor.execute('SELECT * FROM logs ORDER BY timestamp DESC')
-        logs = cursor.fetchall()
-        logs_text.setText('\n'.join(f'ID: {log[0]}, Пользователь: {log[1]}, Действие: {log[2]}, Время: {log[3]}' for log in logs))
+        try:
+            cursor = self.db.conn.cursor()
+            cursor.execute('SELECT * FROM logs ORDER BY timestamp DESC')
+            logs = cursor.fetchall()
+            logs_text.setText('\n'.join(f'ID: {log[0]}, Пользователь: {log[1]}, Действие: {log[2]}, Время: {log[3]}' for log in logs))
+        except Exception as e:
+            logging.error(f"Ошибка загрузки логов: {e}")
+            logs_text.setText('Не удалось загрузить логи')
         layout.addWidget(logs_text)
         tab.setLayout(layout)
         self.dock_layout.addWidget(QPushButton('Логи', clicked=lambda: self.tabs.setCurrentWidget(tab)))
@@ -1558,10 +1747,14 @@ class TeacherWindow(BaseMainWindow):
         self.tabs.addTab(tab, 'Инвентарь')
 
     def search_inventory(self):
-        query = self.search_input.text()
-        items = self.db.search_inventory(query)
-        self.model.data = items
-        self.model.layoutChanged.emit()
+        try:
+            query = self.search_input.text()
+            items = self.db.search_inventory(query)
+            self.model.data = items
+            self.model.layoutChanged.emit()
+        except Exception as e:
+            logging.error(f"Ошибка поиска инвентаря: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось выполнить поиск')
 
     def add_bookings_tab(self):
         tab = QWidget()
@@ -1579,35 +1772,42 @@ class TeacherWindow(BaseMainWindow):
         self.tabs.addTab(tab, 'Бронирования')
 
     def load_bookings(self):
-        bookings = self.db.get_bookings(self.user_id)
-        model = QAbstractTableModel()
-        model.data = bookings
-        model.rowCount = lambda parent=None: len(bookings)
-        model.columnCount = lambda parent=None: 5
-        model.data = lambda index, role=Qt.DisplayRole: str(bookings[index.row()][index.column()]) if role == Qt.DisplayRole else None
-        model.headerData = lambda section, orientation, role=Qt.DisplayRole: ['ID', 'ID инвентаря', 'ID пользователя', 'Дата брони', 'Занятие'][section] if role == Qt.DisplayRole and orientation == Qt.Horizontal else None
-        self.bookings_table.setModel(model)
+        try:
+            bookings = self.db.get_bookings(self.user_id)
+            model = QAbstractTableModel()
+            model.data = bookings
+            model.rowCount = lambda parent=None: len(bookings)
+            model.columnCount = lambda parent=None: 5
+            model.data = lambda index, role=Qt.DisplayRole: str(bookings[index.row()][index.column()]) if role == Qt.DisplayRole else None
+            model.headerData = lambda section, orientation, role=Qt.DisplayRole: ['ID', 'ID инвентаря', 'ID пользователя', 'Дата брони', 'Занятие'][section] if role == Qt.DisplayRole and orientation == Qt.Horizontal else None
+            self.bookings_table.setModel(model)
+        except Exception as e:
+            logging.error(f"Ошибка загрузки бронирований: {e}")
 
     def add_booking_dialog(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle('Добавить бронирование')
-        layout = QFormLayout()
-        inventory_id = QSpinBox()
-        booking_date = QDateEdit(QDate.currentDate())
-        class_ = QLineEdit()
-        add_btn = QPushButton('Забронировать')
-        def add_booking():
-            self.db.add_booking(inventory_id.value(), self.user_id, booking_date.date().toString('yyyy-MM-dd'), class_.text())
-            self.db.log_action(self.user_id, f'Забронирован предмет {inventory_id.value()}')
-            self.load_bookings()
-            dialog.close()
-        add_btn.clicked.connect(add_booking)
-        layout.addRow('ID инвентаря', inventory_id)
-        layout.addRow('Дата бронирования', booking_date)
-        layout.addRow('Занятие', class_)
-        layout.addRow(add_btn)
-        dialog.setLayout(layout)
-        dialog.exec_()
+        try:
+            dialog = QDialog(self)
+            dialog.setWindowTitle('Добавить бронирование')
+            layout = QFormLayout()
+            inventory_id = QSpinBox()
+            booking_date = QDateEdit(QDate.currentDate())
+            class_ = QLineEdit()
+            add_btn = QPushButton('Забронировать')
+            def add_booking():
+                self.db.add_booking(inventory_id.value(), self.user_id, booking_date.date().toString('yyyy-MM-dd'), class_.text())
+                self.db.log_action(self.user_id, f'Забронирован предмет {inventory_id.value()}')
+                self.load_bookings()
+                dialog.close()
+            add_btn.clicked.connect(add_booking)
+            layout.addRow('ID инвентаря', inventory_id)
+            layout.addRow('Дата бронирования', booking_date)
+            layout.addRow('Занятие', class_)
+            layout.addRow(add_btn)
+            dialog.setLayout(layout)
+            dialog.exec_()
+        except Exception as e:
+            logging.error(f"Ошибка диалога бронирования: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось добавить бронирование')
 
     def add_reports_tab(self):
         tab = QWidget()
@@ -1635,55 +1835,67 @@ class TeacherWindow(BaseMainWindow):
         self.tabs.addTab(tab, 'Отчёты')
 
     def show_report(self, index):
-        row = index.row()
-        report_id = self.reports_model.data[row][0]
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
-        config = json.loads(cursor.fetchone()[0])
-        self.preview.setHtml(config.get('preview_html', '<h1>Отчёт</h1>'))
+        try:
+            row = index.row()
+            report_id = self.reports_model.data[row][0]
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
+            config = json.loads(cursor.fetchone()[0])
+            self.preview.setHtml(config.get('preview_html', '<h1>Отчёт</h1>'))
+        except Exception as e:
+            logging.error(f"Ошибка показа отчёта: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось показать отчёт')
 
     def edit_report(self):
-        row = self.reports_table.currentIndex().row()
-        if row < 0:
-            QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
-            return
-        report_id = self.reports_model.data[row][0]
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
-        config = json.loads(cursor.fetchone()[0])
-        editor = ReportEditor(self.db, self.user_id, report_id, config)
-        if editor.exec_():
-            self.reports_model.refresh()
-            self.db.log_report_action(report_id, self.user_id, f'Отредактирован отчёт {config["name"]}')
-            self.show_report(self.reports_table.currentIndex())
+        try:
+            row = self.reports_table.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
+                return
+            report_id = self.reports_model.data[row][0]
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
+            config = json.loads(cursor.fetchone()[0])
+            editor = ReportEditor(self.db, self.user_id, report_id, config)
+            if editor.exec_():
+                self.reports_model.refresh()
+                self.db.log_report_action(report_id, self.user_id, f'Отредактирован отчёт {config["name"]}')
+                self.show_report(self.reports_table.currentIndex())
+        except Exception as e:
+            logging.error(f"Ошибка редактирования отчёта: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось редактировать отчёт')
 
     def export_report(self):
-        row = self.reports_table.currentIndex().row()
-        if row < 0:
-            QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
-            return
-        report_id = self.reports_model.data[row][0]
-        cursor = self.db.conn.cursor()
-        cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
-        config = json.loads(cursor.fetchone()[0])
-        dialog = QDialog(self)
-        dialog.setWindowTitle('Экспорт отчёта')
-        layout = QFormLayout()
-        format_selector = QComboBox()
-        format_selector.addItems(['PDF', 'Excel', 'HTML'])
-        layout.addRow('Формат', format_selector)
-        export_btn = QPushButton('Экспортировать')
-        def do_export():
-            report = ReportGenerator(self.db, config, format_selector.currentText().lower(), 'school_logo.png')
-            filename = f'report_{report_id}.{format_selector.currentText().lower()}'
-            report.export(filename)
-            QMessageBox.information(self, 'Успех', f'Отчёт экспортирован: {filename}')
-            self.db.log_report_action(report_id, self.user_id, f'Экспортирован отчёт в {format_selector.currentText()}')
-            dialog.close()
-        export_btn.clicked.connect(do_export)
-        layout.addRow(export_btn)
-        dialog.setLayout(layout)
-        dialog.exec_()
+        try:
+            row = self.reports_table.currentIndex().row()
+            if row < 0:
+                QMessageBox.warning(self, 'Ошибка', 'Выберите отчёт')
+                return
+            report_id = self.reports_model.data[row][0]
+            cursor = self.db.conn.cursor()
+            cursor.execute("SELECT config FROM report_templates WHERE id = ?", (report_id,))
+            config = json.loads(cursor.fetchone()[0])
+            dialog = QDialog(self)
+            dialog.setWindowTitle('Экспорт отчёта')
+            layout = QFormLayout()
+            format_selector = QComboBox()
+            format_selector.addItems(['PDF', 'Excel', 'HTML'])
+            layout.addRow('Формат', format_selector)
+            export_btn = QPushButton('Экспортировать')
+            def do_export():
+                report = ReportGenerator(self.db, config, format_selector.currentText().lower(), 'school_logo.png')
+                filename = f'report_{report_id}.{format_selector.currentText().lower()}'
+                report.export(filename)
+                QMessageBox.information(self, 'Успех', f'Отчёт экспортирован: {filename}')
+                self.db.log_report_action(report_id, self.user_id, f'Экспортирован отчёт в {format_selector.currentText()}')
+                dialog.close()
+            export_btn.clicked.connect(do_export)
+            layout.addRow(export_btn)
+            dialog.setLayout(layout)
+            dialog.exec_()
+        except Exception as e:
+            logging.error(f"Ошибка экспорта отчёта: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось экспортировать отчёт')
 
 class StudentWindow(BaseMainWindow):
     def setup_ui(self):
@@ -1720,31 +1932,39 @@ class StudentWindow(BaseMainWindow):
         self.tabs.addTab(tab, 'Инвентарь')
 
     def search_inventory(self):
-        query = self.search_input.text()
-        items = self.db.search_inventory(query)
-        self.model.data = items
-        self.model.layoutChanged.emit()
+        try:
+            query = self.search_input.text()
+            items = self.db.search_inventory(query)
+            self.model.data = items
+            self.model.layoutChanged.emit()
+        except Exception as e:
+            logging.error(f"Ошибка поиска инвентаря: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось выполнить поиск')
 
     def scan_qr(self):
-        dialog = QDialog(self)
-        dialog.setWindowTitle('Сканировать QR-код')
-        layout = QVBoxLayout()
-        qr_input = QLineEdit()
-        layout.addWidget(QLabel('Введите данные QR-кода:'))
-        layout.addWidget(qr_input)
-        scan_btn = QPushButton('Поиск')
-        def search_qr():
-            data = qr_input.text()
-            if 'ID инвентаря' in data:
-                id = int(data.split(':')[1].split('-')[0].strip())
-                items = self.db.search_inventory(str(id))
-                self.model.data = items
-                self.model.layoutChanged.emit()
-                dialog.close()
-        scan_btn.clicked.connect(search_qr)
-        layout.addWidget(scan_btn)
-        dialog.setLayout(layout)
-        dialog.exec_()
+        try:
+            dialog = QDialog(self)
+            dialog.setWindowTitle('Сканировать QR-код')
+            layout = QVBoxLayout()
+            qr_input = QLineEdit()
+            layout.addWidget(QLabel('Введите данные QR-кода:'))
+            layout.addWidget(qr_input)
+            scan_btn = QPushButton('Поиск')
+            def search_qr():
+                data = qr_input.text()
+                if 'ID инвентаря' in data:
+                    id = int(data.split(':')[1].split('-')[0].strip())
+                    items = self.db.search_inventory(str(id))
+                    self.model.data = items
+                    self.model.layoutChanged.emit()
+                    dialog.close()
+            scan_btn.clicked.connect(search_qr)
+            layout.addWidget(scan_btn)
+            dialog.setLayout(layout)
+            dialog.exec_()
+        except Exception as e:
+            logging.error(f"Ошибка сканирования QR: {e}")
+            QMessageBox.warning(self, 'Ошибка', 'Не удалось сканировать QR-код')
 
     def add_bookings_tab(self):
         tab = QWidget()
@@ -1758,54 +1978,79 @@ class StudentWindow(BaseMainWindow):
         self.tabs.addTab(tab, 'Мои бронирования')
 
     def load_bookings(self):
-        bookings = self.db.get_bookings(self.user_id)
-        model = QAbstractTableModel()
-        model.data = bookings
-        model.rowCount = lambda parent=None: len(bookings)
-        model.columnCount = lambda parent=None: 5
-        model.data = lambda index, role=Qt.DisplayRole: str(bookings[index.row()][index.column()]) if role == Qt.DisplayRole else None
-        model.headerData = lambda section, orientation, role=Qt.DisplayRole: ['ID', 'ID инвентаря', 'ID пользователя', 'Дата брони', 'Занятие'][section] if role == Qt.DisplayRole and orientation == Qt.Horizontal else None
-        self.bookings_table.setModel(model)
+        try:
+            bookings = self.db.get_bookings(self.user_id)
+            model = QAbstractTableModel()
+            model.data = bookings
+            model.rowCount = lambda parent=None: len(bookings)
+            model.columnCount = lambda parent=None: 5
+            model.data = lambda index, role=Qt.DisplayRole: str(bookings[index.row()][index.column()]) if role == Qt.DisplayRole else None
+            model.headerData = lambda section, orientation, role=Qt.DisplayRole: ['ID', 'ID инвентаря', 'ID пользователя', 'Дата брони', 'Занятие'][section] if role == Qt.DisplayRole and orientation == Qt.Horizontal else None
+            self.bookings_table.setModel(model)
+        except Exception as e:
+            logging.error(f"Ошибка загрузки бронирований: {e}")
 
 if __name__ == '__main__':
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
     app = QApplication(sys.argv)
     app.setStyleSheet("""
         QWidget {
-            background-color: #f8f9fa;
-            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            font-family: 'Segoe UI', sans-serif;
             font-size: 14px;
         }
         QMainWindow {
             background-color: #ffffff;
         }
         QPushButton {
-            background-color: #007bff;
+            background-color: #4e6cff;
             color: white;
             border: none;
-            padding: 8px 16px;
-            border-radius: 4px;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
         }
         QPushButton:hover {
-            background-color: #0056b3;
+            background-color: #3b55d9;
         }
         QLineEdit, QComboBox, QSpinBox, QDateEdit, QTextEdit {
-            border: 1px solid #ced4da;
-            padding: 6px;
-            border-radius: 4px;
-            background-color: white;
+            border: 1px solid #d1d3e2;
+            padding: 8px;
+            border-radius: 5px;
+            background-color: #ffffff;
         }
         QTableView {
-            border: 1px solid #dee2e6;
-            gridline-color: #dee2e6;
-            selection-background-color: #007bff;
+            border: 1px solid #e4e7ed;
+            gridline-color: #e4e7ed;
+            selection-background-color: #4e6cff;
             selection-color: white;
+            alternate-background-color: #f7f9fc;
         }
         QTabWidget::pane {
-            border: 1px solid #dee2e6;
+            border: 1px solid #e4e7ed;
+        }
+        QTabBar::tab {
+            background: #ffffff;
+            border: 1px solid #e4e7ed;
+            border-bottom-color: #ffffff;
+            border-top-left-radius: 4px;
+            border-top-right-radius: 4px;
+            padding: 10px;
+        }
+        QTabBar::tab:selected {
+            background: #4e6cff;
+            color: white;
         }
         QLabel {
-            color: #212529;
+            color: #333333;
+        }
+        QToolBar {
+            background: #f4f4f9;
+            border-bottom: 1px solid #e4e7ed;
+        }
+        QDockWidget {
+            background: #f4f4f9;
+            border-right: 1px solid #e4e7ed;
         }
     """)
     login = LoginDialog()
